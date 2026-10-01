@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置 · 情商口才训练</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="settings-page">
+<div class="settings-wrap">
+  <a href="/" class="back">← 返回聊天</a>
+  <h1>设置</h1>
+
+  <section class="card">
+    <h2>模型接入（NVIDIA NIM）</h2>
+    <div class="field">
+      <label>API Base URL</label>
+      <input id="cfgBaseUrl" placeholder="https://integrate.api.nvidia.com/v1">
+    </div>
+    <div class="field">
+      <label>API Key</label>
+      <div class="row">
+        <input id="cfgKey" type="password" placeholder="留空 = 保持当前">
+        <button id="cfgKeyShow" class="ghost" style="width:60px">显示</button>
+      </div>
+      <div class="hint" id="cfgKeyHint"></div>
+    </div>
+    <div class="field">
+      <label>模型</label>
+      <div class="row">
+        <input id="cfgModel" list="modelList" placeholder="模型 ID，可手输或从列表选">
+        <datalist id="modelList"></datalist>
+        <button id="modelsBtn" class="ghost" style="width:90px">刷新列表</button>
+      </div>
+      <div class="hint">列表来自当前 key 可用的 NIM 模型；刷新后可从下拉里挑。</div>
+    </div>
+    <div class="row">
+      <div class="field grow">
+        <label>超时（秒）</label>
+        <input id="cfgTimeout" type="number" min="10">
+      </div>
+      <div class="field grow">
+        <label>失败重试次数</label>
+        <input id="cfgRetries" type="number" min="0">
+      </div>
+      <div class="field grow">
+        <label>每 N 轮评分</label>
+        <input id="cfgN" type="number" min="1">
+      </div>
+    </div>
+    <div class="row">
+      <button id="saveCfgBtn">保存配置</button>
+      <button id="testCfgBtn" class="ghost" style="width:auto">测试连通</button>
+    </div>
+    <div id="cfgStatus" class="hint"></div>
+  </section>
+
+  <section class="card">
+    <h2>我的资料（训练时供出题参考）</h2>
+    <div class="field">
+      <label>称呼</label>
+      <input id="uName" placeholder="怎么称呼你">
+    </div>
+    <div class="field">
+      <label>工作背景</label>
+      <input id="uWork" placeholder="职业、最近的项目或压力">
+    </div>
+    <div class="field">
+      <label>情感背景</label>
+      <input id="uEmo" placeholder="关系状态、正在处理的情感问题">
+    </div>
+    <div class="field">
+      <label>生活背景</label>
+      <input id="uLife" placeholder="作息、健康、近况">
+    </div>
+    <button id="saveUserBtn">保存资料</button>
+  </section>
+
+  <section class="card">
+    <h2>人员身份（训练对象）</h2>
+    <div id="personaList"></div>
+    <button id="addPersonaBtn">＋ 添加人员</button>
+    <div id="personaForm" class="hidden"></div>
+  </section>
+
+  <section class="card">
+    <h2>沟通技术卡（skill，从书里蒸馏）</h2>
+    <div class="hint" style="margin-bottom:10px">
+      一张卡 = 一个可复用的沟通技术（书只是来源）。会用在：主对话内化使用（不念书）、
+      暂停点评、复盘、灵魂提问。
+    </div>
+    <div id="skillList"></div>
+    <div class="row">
+      <button id="addSkillBtn" style="width:auto">＋ 添加技术卡</button>
+      <button id="importSkillBtn" class="ghost" style="width:auto">粘贴导入多张卡</button>
+    </div>
+    <div id="skillForm" class="hidden">
+      <div class="field"><label>技术名 *</label><input id="skName" placeholder="如：识别控制型沟通"></div>
+      <div class="field"><label>来源书名</label><input id="skSource" placeholder="如：《关键对话》"></div>
+      <div class="field"><label>触发条件（逗号分隔，命中就注入主对话）</label><input id="skTriggers" placeholder="如：对方反复否定，你不敢表达，冲突回避"></div>
+      <div class="field"><label>该怎么做 *</label><textarea id="skDo" rows="3" placeholder="正确做法，具体可操作"></textarea></div>
+      <div class="field"><label>别怎么做</label><textarea id="skDont" rows="2" placeholder="反面做法"></textarea></div>
+      <div class="row">
+        <button id="saveSkillBtn" style="width:auto">保存</button>
+        <button id="cancelSkillBtn" class="ghost" style="width:auto">取消</button>
+      </div>
+    </div>
+    <div id="skillImport" class="hidden">
+      <div class="hint">粘贴 JSON 数组，每项含 name / source / triggers / do / dont 字段，可多张一起导入：</div>
+      <textarea id="skImportText" rows="6" placeholder='[{"name":"温和拒绝","source":"非暴力沟通","triggers":["对方越界","被道德绑架"],"do":"先接住需求，再亮出底线","dont":"直接说不行"}]'></textarea>
+      <button id="doImportBtn" style="width:auto">导入</button>
+    </div>
+  </section>
+</div>
+
+<script src="settings.js"></script>
+</body>
+</html>

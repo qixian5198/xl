@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    container_name: xl-eq
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    # NVIDIA_MODEL 等也在这里覆盖（可选）
+    environment:
+      # 覆盖 .env 里的 DB_PATH，指向容器卷
+      DB_PATH: /data/xl.db
+    volumes:
+      # 宿主机 ./data 存 SQLite，重建镜像不丢数据
+      - ./data:/data
+    restart: unless-stopped

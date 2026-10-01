@@ -1,0 +1,9 @@
+# 不进镜像的东西：本地数据、密钥、Python 产物、杂项
+venv/
+__pycache__/
+*.pyc
+xl.db
+data/
+.env
+.DS_Store
+*.md
