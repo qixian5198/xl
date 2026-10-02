@@ -561,7 +561,10 @@ def get_summary(session_id: int) -> dict:
         return {
             "session_id": session_id,
             "total": result.get("total"),
+            "stars": result.get("stars"),
             "dims": result.get("dims", {}),
+            "framework": result.get("framework", ""),
+            "techniques": result.get("techniques", []),
             "highlights": result.get("highlights", []),
             "problems": result.get("problems", []),
             "suggestions": result.get("suggestions", []),

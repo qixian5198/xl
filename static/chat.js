@@ -103,14 +103,17 @@ async function startSession() {
 }
 
 async function postMessage(text) {
+  const mySession = current;
   addMsg("user", text);
   lastActivity = Date.now();
   const pending = addMsg("bot", "正在生成…", "pending");
-  const res = await api(`/sessions/${current.id}/messages`, {
+  const res = await api(`/sessions/${mySession.id}/messages`, {
     method: "POST",
     body: JSON.stringify({ content: text }),
   }).catch((e) => ({ error: e.message }));
   pending.remove();
+  // 等待期间切走了会话/历史会话，current 已变，丢弃这次响应（之前在这里读 current.mode 会崩）
+  if (current !== mySession) return;
   if (res.error) {
     addMsg("error", "生成失败：" + res.error + "（消息已保存，可重试发送）", "feedback");
     return;
@@ -187,24 +190,62 @@ setInterval(doNudge, 15000);
 
 async function endAndReview() {
   if (!confirm("结束会话并生成复盘？")) return;
-  await api(`/sessions/${current.id}/end`, { method: "POST" });
+  const sid = current.id;
+  await api(`/sessions/${sid}/end`, { method: "POST" });
   $("endBtn").disabled = true;
   $("soulBtn").disabled = true;
   $("coachBtn").disabled = true;
   $("inputArea").style.display = "none";
-  const s = await api(`/sessions/${current.id}/summary`, { method: "POST" });
-  renderSummary(s);
   current = null;
+  $("sessionSel").value = String(sid);
+  await generateReview(sid);
+  loadSessions();
+}
+
+async function generateReview(id) {
+  $("reviewBtn").disabled = true;
+  $("summary").textContent = "复盘生成中…（约需 30-90 秒）";
+  try {
+    const s = await api(`/sessions/${id}/summary`, { method: "POST" });
+    renderSummary(s);
+  } catch (e) {
+    $("summary").textContent = "复盘失败：" + e.message;
+  }
+  $("reviewBtn").disabled = false;
+}
+
+async function viewSession(id) {
+  const s = await api(`/sessions/${id}`);
+  current = null; // 历史会话只读，不发消息
+  $("msgs").innerHTML = "";
+  $("soulBtn").disabled = true;
+  $("coachBtn").disabled = true;
+  $("endBtn").disabled = true;
+  $("reviewBtn").disabled = false;
+  $("guessPanel").classList.add("hidden");
+  $("nextScenarioBtn").classList.add("hidden");
+  const p = personas.find((x) => x.id === s.persona_id);
+  $("chatTitle").textContent = `历史会话 #${id} · ${p ? p.name : ""} · ${s.status}`;
+  $("sessionHint").textContent = `状态：${s.status}。可点右侧「生成复盘」。`;
+  for (const m of s.messages) {
+    if (m.role === "user") addMsg("user", m.content);
+    else if (m.role === "assistant") addMsg("bot", m.content);
+  }
+  $("summary").textContent = "点「生成复盘」查看星级、框架、技巧点评和改进说法。";
+}
+
+function renderStars(n) {
+  n = Math.max(0, Math.min(5, +n || 0));
+  return "★".repeat(n) + "☆".repeat(5 - n);
 }
 
 function renderSummary(s) {
   const box = $("summary");
   box.innerHTML = "";
-  const sec = (title, arr, cls) => {
+  const sec = (title, arr) => {
     if (!arr || !arr.length) return;
     const h = document.createElement("h3");
     h.textContent = title;
-    h.className = cls || "";
     box.appendChild(h);
     const ul = document.createElement("ul");
     for (const t of arr) {
@@ -214,13 +255,36 @@ function renderSummary(s) {
     }
     box.appendChild(ul);
   };
+
+  // 星评 + 总分
   const score = document.createElement("div");
   score.className = "score-line";
-  score.textContent = `总分 ${s.total} · 共情 ${s.dims?.empathy ?? "-"} 清晰 ${s.dims?.clarity ?? "-"} 时机 ${s.dims?.timing ?? "-"} 尊重 ${s.dims?.respect ?? "-"} 边界 ${s.dims?.boundary ?? "-"}`;
+  const stars = s.stars != null ? renderStars(s.stars) : "";
+  score.textContent = `总分 ${s.total} ${stars}`;
   box.appendChild(score);
+
+  const dims = document.createElement("div");
+  dims.className = "hint";
+  dims.textContent = `共情 ${s.dims?.empathy ?? "-"} · 清晰 ${s.dims?.clarity ?? "-"} · 时机 ${s.dims?.timing ?? "-"} · 尊重 ${s.dims?.respect ?? "-"} · 边界 ${s.dims?.boundary ?? "-"}`;
+  box.appendChild(dims);
+
+  // 聊天框架
+  if (s.framework) {
+    const fh = document.createElement("h3");
+    fh.textContent = "聊天框架";
+    box.appendChild(fh);
+    const fd = document.createElement("div");
+    fd.className = "fw-box";
+    fd.textContent = s.framework;
+    box.appendChild(fd);
+  }
+
+  // 公式技巧点评
+  sec("公式技巧点评", s.techniques);
   sec("亮点", s.highlights);
   sec("问题", s.problems);
-  sec("改进说法", s.suggestions);
+  sec("说话改进", s.suggestions);
+
   if (s.next_scenario) {
     const hint = document.createElement("div");
     hint.className = "hint";
@@ -241,8 +305,16 @@ function renderSummary(s) {
 
 async function loadSessions() {
   const rows = await api("/sessions");
+  const modeNames = { mood: "判断心情", personality: "判断性格", chat: "聊天问答", soul: "灵魂提问" };
   const sel = $("sessionSel");
-  sel.innerHTML = `<option value="">—</option>` + rows.map((r) => `<option value="${r.id}">#${r.id} ${r.status}</option>`).join("");
+  sel.innerHTML =
+    `<option value="">— 选历史会话复盘 —</option>` +
+    rows
+      .map((r) => {
+        const p = personas.find((x) => x.id === r.persona_id);
+        return `<option value="${r.id}">#${r.id} ${p ? p.name : ""} · ${modeNames[r.mode] || r.mode} · ${r.status}</option>`;
+      })
+      .join("");
 }
 
 async function loadModelMini() {
@@ -287,6 +359,16 @@ async function init() {
   $("coachBtn").onclick = () => coachPause().catch((e) => alert(e.message));
   $("sceneRandomBtn").onclick = () => randomScene();
   $("endBtn").onclick = () => endAndReview().catch((e) => alert(e.message));
+  $("reviewBtn").onclick = () => {
+    const id = $("sessionSel").value;
+    if (!id) { alert("请先在「历史会话」里选一个会话"); return; }
+    viewSession(id).catch((e) => alert(e.message));
+  };
+  $("sessionSel").onchange = () => {
+    const id = $("sessionSel").value;
+    $("reviewBtn").disabled = !id;
+    if (id) viewSession(id).catch((e) => alert(e.message));
+  };
 }
 
 init();
