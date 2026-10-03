@@ -39,6 +39,46 @@ def _profile_block(p: Persona) -> str:
     return "详细人物设定（所有维度都要体现在言行里，但不要直接复述设定给用户）：\n" + "\n".join(lines)
 
 
+def _materials_block(p: Persona, max_chars: int = 8000) -> str:
+    """把上传的资料文件（职业/情感/人际等）注入 prompt。"""
+    raw = getattr(p, "materials_json", None)
+    if not raw:
+        return ""
+    import json as _json
+
+    try:
+        mats = _json.loads(raw)
+    except ValueError:
+        return ""
+    if not isinstance(mats, list) or not mats:
+        return ""
+    parts = []
+    total = 0
+    for m in mats:
+        if not isinstance(m, dict):
+            continue
+        content = (m.get("content") or "").strip()
+        name = m.get("filename") or "资料"
+        if not content:
+            continue
+        chunk = f"【资料 · {name}】\n{content}"
+        if total + len(chunk) > max_chars:
+            # 超过预算就截断剩余，避免 token 爆炸
+            remain = max_chars - total
+            if remain > 200:
+                parts.append(chunk[:remain] + "\n（资料过长已截断）")
+            break
+        parts.append(chunk)
+        total += len(chunk)
+    if not parts:
+        return ""
+    return (
+        "【资料文件】以下是用户为该角色准备的背景资料（可能涉及职业、情感、人际关系、生活等），"
+        "你要把这些内容作为这个角色的已知信息，体现在说话和反应里，但不要向用户复述资料本身：\n"
+        + "\n\n".join(parts)
+    )
+
+
 def persona_block(p: Persona) -> str:
     lines = [
         f"你现在扮演【{p.name}】。",
@@ -48,6 +88,16 @@ def persona_block(p: Persona) -> str:
         f"幽默风格：{getattr(p, 'humor', None) or '看语境，偶尔开个小玩笑'}。",
         f"背景：{p.background}",
     ]
+    soul = (getattr(p, "soul", None) or "").strip()
+    if soul:
+        lines.append(
+            "【灵魂文档】以下是这个角色深层的内在资料（过往经历、心理、说话习惯、价值观、口头禅等），"
+            "你要真正「成为」这个人才会说的话，严格贴合这些设定；"
+            "但绝不能向用户复述或引用这份文档本身，要让它体现在言行里：\n" + soul
+        )
+    materials = _materials_block(p)
+    if materials:
+        lines.append(materials)
     profile = _profile_block(p)
     if profile:
         lines.append(profile)
@@ -113,6 +163,7 @@ def skills_block(skills: list) -> str:
 
 def main_system(persona: Persona, user: Optional[User], mode: str, state: dict,
                scene: Optional[str] = None, memory_facts: Optional[str] = None,
+               persona_memory: Optional[str] = None,
                skills: Optional[list] = None) -> str:
     """一次调用三件套：回复 + 隐藏状态更新 + 给用户打分。
 
@@ -140,6 +191,13 @@ def main_system(persona: Persona, user: Optional[User], mode: str, state: dict,
             "例如「你上次说睡眠不好，现在怎么样了？」。不要生硬复述，一次只接一件事）：\n" + memory_facts
         )
 
+    if persona_memory:
+        parts.append(
+            "【你专属的记忆】以下是只有你（本角色）知道的、你之前和用户聊过的内容——别的角色不知道这些，"
+            "也不要假装是刚认识的陌生人。自然地把它当作你记忆里的事，合适时接回来（例如「你上次跟我说你项目卡住了，后来呢？」）：\n"
+            + persona_memory
+        )
+
     parts.append(EMOTION_RULES)
 
     parts.append(
@@ -162,9 +220,13 @@ def main_system(persona: Persona, user: Optional[User], mode: str, state: dict,
         "patience（只能取：高/中/低）、affection（只能取：高/中/低）、distance（只能取：疏远/正常/亲近）四个字段，"
         "必须是这些枚举值之一，不要输出数字或自由文本；若模式二还要加 personality（可省略保持原值），"
         "再加 reasoning 说明状态为什么变（50 字内）。\n"
-        "memory_facts: 用户在这一句里新透露的、值得记住的关键事（如健康、项目、情绪、生活变动），"
-        "字符串数组，每项 10-30 字，写成完整小事实（例：「老板让ta周末加班赶项目」），"
-        "没有就返回 []。每次只记录新信息，不要重复历史。\n"
+        "user_facts: 用户在这一句里新透露的、关于用户本人的事（ta 自己的健康/项目/情绪/生活变动），"
+        "字符串数组，每项 10-30 字（例：「老板让ta周末加班赶项目」），没有就返回 []。\n"
+        "persona_facts: 用户与【你】之间发生的事：约定、承诺、托付、你答应 ta 的事、你们之间的误会或误会已解、"
+        "你透露给 ta 的你的近况。判断标准：如果换成另一个角色听 ta 说这件事，那个角色不该知道、"
+        "也没立场回应，就该放这里（例：「用户托我周日提醒他/她去菜市场买菜」「我们约了下周三一起打球」）。"
+        "只要涉及你和 ta 的约定/托付/私下近况，即使顺带提到 ta 本人，也优先放 persona_facts。"
+        "字符串数组，没有就返回 []。\n"
         "feedback: 对用户这句话的打分：total(0-100) 与 empathy/clarity/timing/respect/boundary(各 0-10 整数)，"
         "comment 一句话说优点或最该改进的点。若用户这句话只是开场或纯信息补充，feedback 可为 null。"
     )

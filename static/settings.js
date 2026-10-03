@@ -119,16 +119,16 @@ const FORM_DEF = [
   {
     group: "基础身份",
     fields: [
-      { key: "name", label: "姓名", type: "text", required: true, placeholder: "如：李医生 / 老王" },
+      { key: "name", label: "姓名", type: "text", placeholder: "如：李医生 / 老王" },
       { key: "age", label: "年龄", type: "text", placeholder: "如：35" },
       { key: "gender", label: "性别", type: "select", options: "gender" },
       { key: "education", label: "学历", type: "select", options: "education" },
-      { key: "occupation", label: "职业", type: "text", required: true, placeholder: "医生 / 程序员 / 销售" },
+      { key: "occupation", label: "职业", type: "text", placeholder: "医生 / 程序员 / 销售" },
       { key: "years", label: "工作年限", type: "text", placeholder: "如：8 年" },
       { key: "income", label: "收入水平", type: "select", options: "income" },
       { key: "city", label: "城市 / 地区", type: "text" },
-      { key: "relation", label: "与你（用户）的关系", type: "select", options: "relation", required: true },
-      { key: "tone", label: "语气风格", type: "text", required: true, placeholder: "如：稳重直接，不爱绕弯" },
+      { key: "relation", label: "与你（用户）的关系", type: "select", options: "relation" },
+      { key: "tone", label: "语气风格", type: "text", placeholder: "如：稳重直接，不爱绕弯" },
       { key: "style", label: "沟通风格", type: "text", placeholder: "如：爱反问 / 短句 / 爱岔开话题 / 爱讲道理" },
       { key: "humor", label: "幽默风格", type: "text", placeholder: "如：偶尔冷幽默" },
       { key: "background", label: "背景故事", type: "text", placeholder: "经历、工作状况等" },
@@ -287,8 +287,65 @@ function buildForm(p) {
   cancelB.textContent = "取消";
   cancelB.style.width = "auto";
   cancelB.onclick = () => { container.classList.add("hidden"); loadPersonas(); };
+  const extractB = document.createElement("button");
+  extractB.className = "ghost";
+  extractB.style.width = "auto";
+  extractB.style.color = "#389e0d";
+  extractB.style.borderColor = "#389e0d";
+  extractB.textContent = "上传资料文件自动填充";
+  const extractInput = document.createElement("input");
+  extractInput.type = "file";
+  extractInput.accept = ".md,.txt,.markdown,text/markdown,text/plain";
+  extractInput.className = "hidden";
+  extractB.onclick = () => extractInput.click();
+  extractInput.onchange = async () => {
+    const f = extractInput.files[0];
+    if (!f) return;
+    const text = await f.text();
+    extractB.textContent = "正在读取文件…";
+    extractB.disabled = true;
+    try {
+      const r = await api("/personas/extract", { method: "POST", body: JSON.stringify({ content: text }) });
+      const set = (k, v) => {
+        if (!v) return;
+        const el = container.querySelector(`[data-key="${CSS.escape(k)}"]`);
+        if (el) el.value = v;
+      };
+      set("name", r.name);
+      set("age", r.age);
+      set("gender", r.gender);
+      set("occupation", r.occupation);
+      set("relation", r.relation);
+      set("tone", r.tone);
+      set("style", r.style);
+      set("humor", r.humor);
+      set("background", r.background);
+      if (r.expertise && r.expertise.length) set("expertise", r.expertise.join("，"));
+      if (r.profile) {
+        for (const [group, kv] of Object.entries(r.profile)) {
+          const label = group === "人品 / 价值观（各填 高 / 中 / 低）" ? "人品 / 价值观" : group;
+          for (const [cnKey, val] of Object.entries(kv)) {
+            const el = container.querySelector(`[data-group="${CSS.escape(label)}"][data-key="${CSS.escape(cnKey)}"]`);
+            if (el) el.value = val;
+          }
+        }
+      }
+      container.querySelectorAll("[data-key]").forEach((el) => {
+        if (el.dataset.group && r.profile && r.profile[el.dataset.group]) el.title = "由文件自动填充";
+      });
+      alert(`已根据「${f.name}」填充表单，请核对后再保存。填不到的字段留空了。`);
+    } catch (e) {
+      alert("自动填充失败：" + e.message + "\n（可以手动填写，所有字段现在都不是必填）");
+    } finally {
+      extractB.textContent = "上传资料文件自动填充";
+      extractB.disabled = false;
+      extractInput.value = "";
+    }
+  };
   btnRow.appendChild(saveB);
   btnRow.appendChild(cancelB);
+  btnRow.appendChild(extractB);
+  btnRow.appendChild(extractInput);
   container.appendChild(btnRow);
 
   saveB.onclick = async () => {
@@ -308,8 +365,8 @@ function buildForm(p) {
       background: get("background") || "",
       expertise: get("expertise").split(/[，,]/).map((x) => x.trim()).filter(Boolean),
     };
-    if (!body.name || !body.occupation || !body.relation || !body.tone) {
-      alert("姓名、职业、与你关系、语气风格为必填项");
+    if (!body.name) {
+      alert("姓名必填，其他字段可以空着");
       return;
     }
     // 组装 profile
@@ -362,8 +419,13 @@ async function loadPersonas() {
     const item = document.createElement("div");
     item.className = "persona-item";
     const info = document.createElement("div");
+    const soulHint = p.soul
+      ? `<div class="hint soul-on">灵魂文档：已上传 ${p.soul_chars} 字</div>`
+      : `<div class="hint soul-off">灵魂文档：未上传（角色回答会比较"浅"）</div>`;
+    const matCount = p.materials_count || 0;
+    const matHint = `<div class="hint ${matCount ? "soul-on" : "soul-off"}">资料文件：${matCount ? `已传 ${matCount} 份` : "未传（职业/情感/人际等可上传）"}</div>`;
     info.innerHTML = `<b>${p.name}</b>（${p.occupation}/${p.relation}）` +
-      `<div class="hint">${p.tone || ""} ${p.humor ? "· " + p.humor : ""}</div>`;
+      `<div class="hint">${p.tone || ""} ${p.humor ? "· " + p.humor : ""}</div>` + soulHint + matHint;
     const btns = document.createElement("div");
     btns.className = "row";
     const eb = document.createElement("button");
@@ -371,6 +433,76 @@ async function loadPersonas() {
     eb.style.width = "auto";
     eb.textContent = "编辑";
     eb.onclick = () => buildForm(p);
+    // 上传灵魂文档（.md / .txt）
+    const soulInput = document.createElement("input");
+    soulInput.type = "file";
+    soulInput.accept = ".md,.txt,.markdown,text/markdown,text/plain";
+    soulInput.className = "soul-file";
+    const up = document.createElement("button");
+    up.className = "ghost";
+    up.style.width = "auto";
+    up.style.color = "#389e0d";
+    up.style.borderColor = "#389e0d";
+    up.textContent = p.soul ? "换灵魂文档" : "上传灵魂文档(.md)";
+    up.onclick = () => soulInput.click();
+    soulInput.onchange = async () => {
+      const f = soulInput.files[0];
+      if (!f) return;
+      const text = await f.text();
+      try {
+        const r = await api(`/personas/${p.id}/soul`, {
+          method: "POST",
+          body: JSON.stringify({ content: text, filename: f.name }),
+        });
+        alert(`已上传「${f.name}」（${r.soul_chars} 字），角色说话会更像 ${p.name}。`);
+        soulInput.value = "";
+        loadPersonas();
+      } catch (e) {
+        alert("上传失败：" + e.message);
+      }
+    };
+    // 上传资料文件（.txt/.md/.json/.csv），可多份
+    const matInput = document.createElement("input");
+    matInput.type = "file";
+    matInput.accept = ".txt,.md,.json,.csv,text/plain,application/json,text/csv";
+    matInput.multiple = true;
+    matInput.className = "mat-file";
+    const matBtn = document.createElement("button");
+    matBtn.className = "ghost";
+    matBtn.style.width = "auto";
+    matBtn.style.color = "#3355ff";
+    matBtn.style.borderColor = "#3355ff";
+    matBtn.textContent = "传资料文件";
+    matBtn.title = "上传关于该人员的职业/情感/人际等资料（txt/md/json/csv，可多选）";
+    matBtn.onclick = () => matInput.click();
+    matInput.onchange = async () => {
+      const files = Array.from(matInput.files || []);
+      if (!files.length) return;
+      for (const f of files) {
+        try {
+          const text = await f.text();
+          await api(`/personas/${p.id}/materials`, {
+            method: "POST",
+            body: JSON.stringify({ content: text, filename: f.name }),
+          });
+        } catch (e) {
+          alert(`「${f.name}」上传失败：${e.message}`);
+        }
+      }
+      matInput.value = "";
+      loadPersonas();
+      // 根据刚传的第一份文件自动填充表单
+      const f = files[0];
+      try {
+        const r = await api("/personas/extract", { method: "POST", body: JSON.stringify({ content: await f.text() }) });
+        let rawAge = r.age != null ? String(r.age).replace(/[^\d]/g, "").slice(0, 3) : "";
+        buildForm({ ...p, ...r, profile: r.profile || p.profile, expertise: r.expertise || p.expertise,
+          age_group: rawAge ? rawAge + " 岁" : p.age_group,
+          name: r.name || p.name, occupation: r.occupation || p.occupation,
+          relation: r.relation || p.relation, tone: r.tone || p.tone });
+        alert(`已根据「${f.name}」把资料填进表单（空字段保持原样），请核对后保存。`);
+      } catch (e) { /* 填充失败不影响文件上传 */ }
+    };
     const db = document.createElement("button");
     db.className = "ghost";
     db.style.width = "auto";
@@ -383,9 +515,42 @@ async function loadPersonas() {
       loadPersonas();
     };
     btns.appendChild(eb);
+    btns.appendChild(up);
+    btns.appendChild(soulInput);
+    btns.appendChild(matBtn);
+    btns.appendChild(matInput);
     btns.appendChild(db);
     item.appendChild(info);
     item.appendChild(btns);
+
+    // 资料文件清单（可逐份删除）
+    if (p.materials_count) {
+      const mats = await api(`/personas/${p.id}/materials`).catch(() => []);
+      if (mats.length) {
+        const wrap = document.createElement("div");
+        wrap.className = "mat-list";
+        for (const m of mats) {
+          const row = document.createElement("div");
+          row.className = "mat-row";
+          const name = document.createElement("span");
+          name.textContent = `📄 ${m.filename}（${m.chars} 字）`;
+          const del = document.createElement("button");
+          del.className = "ghost";
+          del.style.cssText = "width:auto;margin-top:0;color:#d4380d;border-color:#d4380d;font-size:12px;padding:2px 8px";
+          del.textContent = "删";
+          del.onclick = async () => {
+            if (!confirm(`删除资料「${m.filename}」？`)) return;
+            await api(`/personas/${p.id}/materials/${m.index}`, { method: "DELETE" });
+            loadPersonas();
+          };
+          row.appendChild(name);
+          row.appendChild(del);
+          wrap.appendChild(row);
+        }
+        item.appendChild(wrap);
+      }
+    }
+
     list.appendChild(item);
   }
 }

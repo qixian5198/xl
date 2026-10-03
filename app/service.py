@@ -13,6 +13,7 @@ from .database import (
     HiddenState,
     Message,
     Persona,
+    PersonaMemory,
     Session,
     Skill,
     User,
@@ -131,6 +132,58 @@ def _recent_facts(user_id: int, limit: int = 8) -> str:
         s.close()
 
 
+def _persona_facts(persona_id: int, limit: int = 8) -> str:
+    """这个角色记忆里"我"（用户）的事，只属于该角色，别的角色不知道。"""
+    s = db()
+    try:
+        rows = (
+            s.query(PersonaMemory)
+            .filter(PersonaMemory.persona_id == persona_id)
+            .order_by(desc(PersonaMemory.id))
+            .limit(limit)
+            .all()
+        )
+        return "\n".join(f"- {r.fact}" for r in rows)
+    finally:
+        s.close()
+
+
+def _skills_by_ids(ids: list) -> list:
+    s = db()
+    try:
+        rows = s.query(Skill).filter(Skill.id.in_(ids)).all()
+        out = [
+            {
+                "id": r.id,
+                "name": r.name,
+                "source": r.source,
+                "triggers": json.loads(r.triggers or "[]"),
+                "do": r.do,
+                "dont": r.dont,
+            }
+            for r in rows
+        ]
+        # 保持用户选择顺序
+        order = {i: n for n, i in enumerate(ids)}
+        out.sort(key=lambda x: order.get(x["id"], 999))
+        return out
+    finally:
+        s.close()
+
+
+def _skills_for_session(session_id: int, scene: Optional[str], limit: int = 2) -> list:
+    """手动指定优先：session.skill_ids 非空就用选中的卡片；否则按场景自动路由。"""
+    s = db()
+    try:
+        sess = s.get(Session, session_id)
+        manual = json.loads(sess.skill_ids or "[]") if sess else []
+        if isinstance(manual, list) and manual:
+            return _skills_by_ids([int(i) for i in manual])
+        return _route_skills(session_id, scene, limit)
+    finally:
+        s.close()
+
+
 def _route_skills(session_id: int, scene: Optional[str], limit: int = 2) -> list:
     """按当前场景 + 最近暴露的弱点，路由到最相关的 skill 卡（最多 limit 张）。"""
     s = db()
@@ -211,6 +264,15 @@ def create_session(user_id: Optional[int], persona_id: int, mode: str,
         p = s.get(Persona, persona_id)
         if p is None:
             raise ValueError("身份不存在")
+        active = (
+            s.query(Session)
+            .filter(Session.persona_id == persona_id, Session.status == "active")
+            .first()
+        )
+        if active:
+            raise ValueError(
+                f"{p.name} 已有一个进行中的会话（#{active.id}），请先结束它，再开新的"
+            )
         user = _get_user(user_id)
         sess = Session(user_id=user.id, persona_id=persona_id, mode=mode,
                        scene=scene or None,
@@ -218,7 +280,8 @@ def create_session(user_id: Optional[int], persona_id: int, mode: str,
         s.add(sess)
         s.commit()
         s.refresh(sess)
-        return {"id": sess.id, "mode": mode, "persona_id": persona_id, "scene": sess.scene, "status": "active"}
+        return {"id": sess.id, "mode": mode, "persona_id": persona_id,
+                "scene": sess.scene, "status": "active", "skill_ids": []}
     finally:
         s.close()
 
@@ -248,11 +311,12 @@ def send_message(session_id: int, content: str) -> dict:
         give_feedback = sess.mode in ("chat", "soul") or (turn % max(settings.FEEDBACK_EVERY_N, 1) == 0)
 
         facts_text = _recent_facts(user.id) if user else ""
-        skills = _route_skills(session_id, sess.scene)
+        skills = _skills_for_session(session_id, sess.scene)
         sys_prompt = prompts.main_system(
             p, user, sess.mode, _latest_state(session_id),
             scene=sess.scene,
             memory_facts=facts_text or None,
+            persona_memory=_persona_facts(p.id),
             skills=skills,
         )
         prompt_extra = "" if give_feedback else "\n\n本轮 feedback 字段输出 null（未到评分轮次）。"
@@ -285,18 +349,30 @@ def send_message(session_id: int, content: str) -> dict:
         )
         s.add(state)
 
-        # 记忆：把用户新透露的关键事入库，下次会话也能接回来
-        raw_facts = result.get("memory_facts") or []
-        if isinstance(raw_facts, str):
-            raw_facts = [x.strip() for x in re.split(r"[;；、,，]", raw_facts) if x.strip()]
-        if isinstance(raw_facts, list):
+        # 记忆：用户共享记忆 + 本角色专属记忆，分开入库
+        raw_user = result.get("user_facts") or result.get("memory_facts") or []
+        if isinstance(raw_user, str):
+            raw_user = [x.strip() for x in re.split(r"[;；、,，]", raw_user) if x.strip()]
+        if isinstance(raw_user, list):
             existing = {
                 r.fact.strip() for r in s.query(UserMemory).filter(UserMemory.user_id == user.id).all()
             }
-            for fact in raw_facts:
+            for fact in raw_user:
                 fact = str(fact).strip()
                 if fact and fact not in existing and 2 < len(fact) <= 80:
                     s.add(UserMemory(user_id=user.id, fact=fact, source_session=session_id))
+
+        raw_persona = result.get("persona_facts") or []
+        if isinstance(raw_persona, str):
+            raw_persona = [x.strip() for x in re.split(r"[;；、,，]", raw_persona) if x.strip()]
+        if isinstance(raw_persona, list):
+            p_existing = {
+                r.fact.strip() for r in s.query(PersonaMemory).filter(PersonaMemory.persona_id == p.id).all()
+            }
+            for fact in raw_persona:
+                fact = str(fact).strip()
+                if fact and fact not in p_existing and 2 < len(fact) <= 80:
+                    s.add(PersonaMemory(persona_id=p.id, fact=fact, source_session=session_id))
 
         # 写反馈（模型偶尔把 feedback 输出成字符串，跳过）
         fb = result.get("feedback")
@@ -464,7 +540,7 @@ def coach_pause(session_id: int) -> dict:
             .all()
         )
         fb_digest = "\n".join(f"- {f.comment}（total {f.total}）" for f in fbs if f.comment) or "（无逐轮反馈）"
-        skills = _route_skills(session_id, sess.scene, limit=3)
+        skills = _skills_for_session(session_id, sess.scene, limit=3)
         skill_block = _coach_skill_block(skills)
 
         sys_prompt = (
@@ -523,6 +599,30 @@ def end_session(session_id: int) -> dict:
         sess.status = "ended"
         s.commit()
         return {"id": session_id, "status": "ended"}
+    finally:
+        s.close()
+
+
+def delete_session(session_id: int) -> dict:
+    """逐条删除一个历史会话及其全部关联数据（消息/状态/判断/反馈/点评）。
+
+    不动 user_memories / persona_memories / skills —— 那些是跨会话的角色与用户记忆。
+    """
+    s = db()
+    try:
+        sess = s.get(Session, session_id)
+        if sess is None:
+            raise ValueError("会话不存在")
+        if sess.status == "active":
+            raise ValueError("会话还在进行中，请先结束再删除")
+        s.query(CoachComment).filter(CoachComment.session_id == session_id).delete()
+        s.query(Feedback).filter(Feedback.session_id == session_id).delete()
+        s.query(Guess).filter(Guess.session_id == session_id).delete()
+        s.query(HiddenState).filter(HiddenState.session_id == session_id).delete()
+        s.query(Message).filter(Message.session_id == session_id).delete()
+        s.delete(sess)
+        s.commit()
+        return {"deleted": session_id}
     finally:
         s.close()
 
@@ -586,6 +686,10 @@ def nudge(session_id: int) -> dict:
         p = s.get(Persona, sess.persona_id)
         state = _latest_state(session_id)
         ctx = _history_msgs(session_id, limit=10)
+        pmem = _persona_facts(p.id)
+        extra = ""
+        if pmem:
+            extra = "\n\n你记得（只有你知道的、之前和用户聊过的）：\n" + pmem
 
         sys_prompt = (
             prompts.persona_block(p)
@@ -593,6 +697,7 @@ def nudge(session_id: int) -> dict:
             + prompts.state_block(state)
             + "\n\n"
             + prompts.NUDGE_SYSTEM
+            + extra
         )
         result = ask_json(sys_prompt, ctx, temperature=0.8)
         text = str(result.get("nudge") or result.get("assistant_reply") or "").strip()

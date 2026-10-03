@@ -32,6 +32,8 @@ class Persona(Base):
     background = Column(Text)
     expertise = Column(Text)  # JSON 数组字符串
     style = Column(Text)  # 沟通风格：短句/长篇/爱反问/爱岔开话题/爱讲道理…
+    soul = Column(Text)  # 上传的 .md 人物资料，赋予角色"灵魂"
+    materials_json = Column(Text)  # 上传的资料文件（txt/md 原文），JSON 数组：[{filename, content, uploaded_at}]
     profile_json = Column(Text)  # 详细资料（家庭/性格/价值观/社交/知识，按 人员身份字段.md 分组）
     config_json = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
@@ -52,6 +54,7 @@ class Session(Base):
     mode = Column(Text)
     status = Column(Text, default="active")
     scene = Column(Text)
+    skill_ids = Column(Text)  # 手动指定的 skill 卡 id，JSON 数组；空 = 自动路由
     initial_state_json = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
 
@@ -151,6 +154,16 @@ class UserMemory(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class PersonaMemory(Base):
+    """某个角色（身份）视角的对话记忆：我和这个人聊过什么。"""
+    __tablename__ = "persona_memories"
+    id = Column(Integer, primary_key=True)
+    persona_id = Column(Integer, index=True)
+    fact = Column(Text)
+    source_session = Column(Integer)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _migrate()
@@ -172,8 +185,14 @@ def _migrate():
             conn.execute(sa.text("ALTER TABLE personas ADD COLUMN humor TEXT"))
         if not have("personas", "style"):
             conn.execute(sa.text("ALTER TABLE personas ADD COLUMN style TEXT"))
+        if not have("personas", "soul"):
+            conn.execute(sa.text("ALTER TABLE personas ADD COLUMN soul TEXT"))
+        if not have("personas", "materials_json"):
+            conn.execute(sa.text("ALTER TABLE personas ADD COLUMN materials_json TEXT"))
         if not have("personas", "profile_json"):
             conn.execute(sa.text("ALTER TABLE personas ADD COLUMN profile_json TEXT"))
         if not have("sessions", "scene"):
             conn.execute(sa.text("ALTER TABLE sessions ADD COLUMN scene TEXT"))
+        if not have("sessions", "skill_ids"):
+            conn.execute(sa.text("ALTER TABLE sessions ADD COLUMN skill_ids TEXT"))
         conn.commit()
