@@ -423,7 +423,7 @@ async function loadPersonas() {
       ? `<div class="hint soul-on">灵魂文档：已上传 ${p.soul_chars} 字</div>`
       : `<div class="hint soul-off">灵魂文档：未上传（角色回答会比较"浅"）</div>`;
     const matCount = p.materials_count || 0;
-    const matHint = `<div class="hint ${matCount ? "soul-on" : "soul-off"}">资料文件：${matCount ? `已传 ${matCount} 份` : "未传（职业/情感/人际等可上传）"}</div>`;
+    const matHint = `<div class="hint ${matCount ? "soul-on" : "soul-off"}">资料文件：${matCount ? `已传 ${matCount} 份` : "未传（职业/情感/人际等可上传）"}<br><i>冲突时优先级：编辑 &gt; 资料文件 &gt; 灵魂文档</i></div>`;
     info.innerHTML = `<b>${p.name}</b>（${p.occupation}/${p.relation}）` +
       `<div class="hint">${p.tone || ""} ${p.humor ? "· " + p.humor : ""}</div>` + soulHint + matHint;
     const btns = document.createElement("div");

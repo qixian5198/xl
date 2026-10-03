@@ -91,7 +91,7 @@ def persona_block(p: Persona) -> str:
     soul = (getattr(p, "soul", None) or "").strip()
     if soul:
         lines.append(
-            "【灵魂文档】以下是这个角色深层的内在资料（过往经历、心理、说话习惯、价值观、口头禅等），"
+            "【灵魂文档】（最低优先级）以下是这个角色深层的内在资料（过往经历、心理、说话习惯、价值观、口头禅等），"
             "你要真正「成为」这个人才会说的话，严格贴合这些设定；"
             "但绝不能向用户复述或引用这份文档本身，要让它体现在言行里：\n" + soul
         )
@@ -104,7 +104,12 @@ def persona_block(p: Persona) -> str:
     experts = p.expertise_list()
     if experts:
         lines.append(f"你可以自然地使用这些领域知识：{ '、'.join(experts) }。但不要炫技，只在合适时用。")
-    lines.append("你要保持角色一致，同时根据下方隐藏状态调整说话的方式和耐心。")
+    lines.append(
+        "你要保持角色一致，同时根据下方隐藏状态调整说话的方式和耐心。\n"
+        "若以上各层信息有冲突，按此优先级裁决（越靠前越可信）："
+        "1) 基础身份与详细人物设定（用户手动编辑的） 2) 资料文件 3) 灵魂文档。"
+        "被覆盖的低优先级内容仍然保留其不冲突的部分。"
+    )
     return "\n".join(lines)
 
 
