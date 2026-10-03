@@ -41,12 +41,11 @@ async function startSession() {
   $("soulBtn").disabled = false;
   $("coachBtn").disabled = false;
   $("endSessionBtn").disabled = false;
-  $("endSidebarBtn").disabled = false;
   $("inputArea").style.display = ""; // 上一会话结束后被隐藏过，恢复输入框
   clearHighlight();
   $("chatTitle").textContent = current.persona.name + (scene ? ` · ${scene}` : "");
 
-  loadSkillsForPanel().then(() => setSkillPanel(true)).catch(() => setSkillPanel(false));
+  loadSkillsForPanel().catch(() => {});
 
   // 刷新"进行中会话"列表（新会话立刻出现）
   loadActiveSessions().catch(() => {});
@@ -229,10 +228,9 @@ async function resumeSession(id) {
   $("soulBtn").disabled = false;
   $("coachBtn").disabled = false;
   $("endSessionBtn").disabled = false;
-  $("endSidebarBtn").disabled = false;
   $("inputArea").style.display = "";
   $("chatTitle").textContent = `进行中 #${s.id} · ${p ? p.name : ""}`;
-  loadSkillsForPanel().then(() => setSkillPanel(true)).catch(() => setSkillPanel(false));
+  loadSkillsForPanel().catch(() => {});
   for (const m of s.messages) {
     if (m.role === "user") addMsg("user", m.content);
     else if (m.role === "assistant") addMsg("bot", m.content);
@@ -251,44 +249,12 @@ function resetToIdle() {
   current = null;
   $("inputArea").style.display = "none";
   $("endSessionBtn").disabled = true;
-  $("endSidebarBtn").disabled = true;
   $("soulBtn").disabled = true;
   $("coachBtn").disabled = true;
-  setSkillPanel(false);
+  renderSkillSidebar(); // 同步侧边栏卡片选中态
 }
 
-// ---- 技术卡（skill）手动选择 ----
-function setSkillPanel(on) {
-  const p = $("skillPanel");
-  p.classList.toggle("hidden", !on);
-  if (!on) $("skillChips").innerHTML = "";
-}
-
-function renderSkillChips(selected = []) {
-  const box = $("skillChips");
-  box.innerHTML = "";
-  if (!allSkills.length) {
-    box.innerHTML = '<span class="hint">（还没有技术卡，去设置页添加）</span>';
-    return;
-  }
-  for (const sk of allSkills) {
-    const chip = document.createElement("span");
-    chip.className = "skill-chip" + (selected.includes(sk.id) ? " on" : "");
-    const src = sk.source ? `<i class="skill-src">${sk.source}</i>` : "";
-    chip.innerHTML = `${sk.name} ${src}`;
-    chip.title = sk.do ? "该：" + sk.do : "";
-    chip.onclick = () => {
-      const cur = current.skill_ids ? [...current.skill_ids] : [];
-      const i = cur.indexOf(sk.id);
-      if (i >= 0) cur.splice(i, 1);
-      else cur.push(sk.id);
-      chip.classList.toggle("on", i < 0);
-      persistSkills(cur);
-    };
-    box.appendChild(chip);
-  }
-}
-
+// ---- 技术卡（skill）侧边栏列表 ----
 async function persistSkills(ids) {
   if (!current) return;
   current.skill_ids = ids;
@@ -303,7 +269,6 @@ const SKILLS_PER_PAGE = 6;
 
 async function loadSkillsForPanel() {
   allSkills = await api("/skills").catch(() => []);
-  renderSkillChips(current ? current.skill_ids || [] : []);
   renderSkillSidebar();
 }
 
@@ -337,7 +302,6 @@ function renderSkillSidebar() {
         allSkills = allSkills.filter((x) => x.id !== sk.id);
         if (current && current.skill_ids.includes(sk.id)) persistSkills(current.skill_ids.filter((i) => i !== sk.id));
         renderSkillSidebar();
-        renderSkillChips(current ? current.skill_ids || [] : []);
       } catch (err) { alert("删除失败：" + err.message); }
     };
     item.appendChild(del);
@@ -438,24 +402,14 @@ function changePage(delta) {
   loadSessions().catch(() => {});
 }
 
-async function loadModelMini() {
-  const c = await api("/config");
-  $("modelMini").innerHTML = `
-    <h2>当前模型</h2>
-    <div class="hint">${c.model}<br>key：${c.key_masked} · 每 ${c.feedback_every_n} 轮评分<br>
-    <a href="/settings.html" style="color:#3355ff">修改模型 / API Key</a></div>`;
-}
-
 async function init() {
   personas = await api("/personas");
   $("personaSel").innerHTML = personas.map((p) => `<option value="${p.id}">${p.name}（${p.occupation}/${p.relation}）</option>`).join("");
   loadSkillsForPanel().catch(() => {});
   loadActiveSessions().catch(() => {});
   loadSessions();
-  loadModelMini();
 
   $("startBtn").onclick = () => startSession().catch((e) => alert(e.message));
-  $("endSidebarBtn").onclick = () => endSession().catch((e) => alert(e.message));
   $("skillPrevPage").onclick = () => { skillPage--; renderSkillSidebar(); };
   $("skillNextPage").onclick = () => { skillPage++; renderSkillSidebar(); };
   $("sendBtn").onclick = () => {
