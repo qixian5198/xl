@@ -45,6 +45,7 @@ async function startSession() {
   clearHighlight();
   $("chatTitle").textContent = current.persona.name + (scene ? ` · ${scene}` : "");
 
+  switchTab(true);
   loadSkillsForPanel().catch(() => {});
 
   // 刷新"进行中会话"列表（新会话立刻出现）
@@ -139,8 +140,6 @@ let sessionPage = 1;
 let sessionPerPage = 10;
 let sessionTotal = 0;
 
-const STATUS_NAMES = { active: "进行中", ended: "已结束" };
-
 function fmtTime(iso) {
   if (!iso) return "";
   const d = new Date(iso.replace(" ", "T"));
@@ -151,28 +150,30 @@ function fmtTime(iso) {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// 通用：一张会话卡片。active → 右上角「结束」，点击恢复会话；ended → 「✕删除」，点击查看。
+// 通用：一张会话卡片。进行中 → 「结束」按钮，点击恢复；已结束 → 「✕删除」。
 function makeSessionCard(x) {
   const isActive = x.status === "active";
   const p = personas.find((y) => y.id === x.persona_id);
   const item = document.createElement("div");
   item.className = "session-item";
   item.dataset.id = String(x.id);
-  const badge = document.createElement("span");
-  badge.className = "s-badge " + (isActive ? "on" : "off");
-  badge.textContent = STATUS_NAMES[x.status] || x.status;
+
+  const dot = document.createElement("span");
+  dot.className = "sess-dot " + (isActive ? "on" : "off");
+  item.appendChild(dot);
+
+  const info = document.createElement("div");
+  info.className = "s-info";
   const title = document.createElement("div");
   title.className = "s-title";
-  title.textContent = `${p ? p.name : "身份#" + x.persona_id}`;
+  title.textContent = p ? p.name : "身份#" + x.persona_id;
   const sub = document.createElement("div");
   sub.className = "s-sub";
-  sub.textContent = `#${x.id} · ${fmtTime(x.created_at)}` + (x.scene ? " · " + x.scene : "");
-  item.appendChild(badge);
-  item.appendChild(title);
-  item.appendChild(sub);
+  sub.textContent = fmtTime(x.created_at) + (x.scene ? " · " + x.scene : "");
+  info.appendChild(title);
+  info.appendChild(sub);
+  item.appendChild(info);
 
-  const actions = document.createElement("div");
-  actions.className = "s-actions";
   if (isActive) {
     const endBtn = document.createElement("button");
     endBtn.className = "s-end";
@@ -188,7 +189,8 @@ function makeSessionCard(x) {
         loadSessions().catch(() => {});
       } catch (e) { alert("结束失败：" + e.message); }
     };
-    actions.appendChild(endBtn);
+    item.appendChild(endBtn);
+    item.onclick = () => resumeSession(x.id).catch((e) => alert(e.message));
   } else {
     const del = document.createElement("button");
     del.className = "s-del";
@@ -202,11 +204,8 @@ function makeSessionCard(x) {
         loadSessions().catch(() => {});
       } catch (e) { alert("删除失败：" + e.message); }
     };
-    actions.appendChild(del);
+    item.appendChild(del);
   }
-  item.appendChild(actions);
-
-  item.onclick = isActive ? () => resumeSession(x.id).catch((e) => alert(e.message)) : null;
   return item;
 }
 
@@ -230,6 +229,7 @@ async function resumeSession(id) {
   $("endSessionBtn").disabled = false;
   $("inputArea").style.display = "";
   $("chatTitle").textContent = `进行中 #${s.id} · ${p ? p.name : ""}`;
+  switchTab(true);
   loadSkillsForPanel().catch(() => {});
   for (const m of s.messages) {
     if (m.role === "user") addMsg("user", m.content);
@@ -277,8 +277,13 @@ function renderSkillSidebar() {
   list.innerHTML = "";
   $("skillCount").textContent = allSkills.length ? `共 ${allSkills.length} 张` : "";
   if (!allSkills.length) {
-    list.innerHTML = '<div class="session-empty">还没有技术卡，去「⚙ 设置」添加。</div>';
-    $("skillPager").classList.add("hidden");
+    const empty = document.createElement("div");
+    empty.className = "list-empty";
+    empty.textContent = "还没有技术卡，去「⚙ 设置」添加。";
+    list.appendChild(empty);
+    $("skillPageInfo").textContent = "1 / 1";
+    $("skillPrevPage").disabled = true;
+    $("skillNextPage").disabled = true;
     return;
   }
   const used = current ? current.skill_ids || [] : [];
@@ -289,7 +294,33 @@ function renderSkillSidebar() {
     const item = document.createElement("div");
     const isOn = used.includes(sk.id);
     item.className = "skill-item" + (isOn ? " on" : "");
-    item.title = "点击" + (isOn ? "取消使用" : "使用") + "该技术卡";
+    item.title = "点击" + (isOn ? "取消启用" : "启用") + "该技术卡";
+    const dot = document.createElement("span");
+    dot.className = "skill-dot";
+    item.appendChild(dot);
+    const body = document.createElement("div");
+    body.className = "skill-body";
+    const nameRow = document.createElement("div");
+    nameRow.className = "skill-name-row";
+    nameRow.innerHTML = `<b>${sk.name}</b>${sk.source ? `<i class="skill-src">《${sk.source}》</i>` : ""}`;
+    body.appendChild(nameRow);
+    if (sk.triggers && sk.triggers.length) {
+      const t = document.createElement("div");
+      t.className = "skill-item-desc";
+      t.textContent = "触发：" + sk.triggers.join("、");
+      body.appendChild(t);
+    }
+    const doD = document.createElement("div");
+    doD.className = "skill-item-desc";
+    doD.textContent = "该：" + sk.do;
+    body.appendChild(doD);
+    if (sk.dont) {
+      const d = document.createElement("div");
+      d.className = "skill-item-desc";
+      d.textContent = "避免：" + sk.dont;
+      body.appendChild(d);
+    }
+    item.appendChild(body);
     const del = document.createElement("button");
     del.className = "s-del";
     del.textContent = "×";
@@ -305,22 +336,9 @@ function renderSkillSidebar() {
       } catch (err) { alert("删除失败：" + err.message); }
     };
     item.appendChild(del);
-    if (isOn) {
-      const badge = document.createElement("span");
-      badge.className = "skill-used-badge";
-      badge.textContent = "使用中";
-      item.appendChild(badge);
-    }
-    const body = document.createElement("div");
-    body.innerHTML =
-      `<b>${sk.name}</b>${sk.source ? `<div class="skill-item-src">来源：${sk.source}</div>` : ""}` +
-      (sk.triggers && sk.triggers.length ? `<div class="skill-item-desc">触发：${sk.triggers.join("、")}</div>` : "") +
-      `<div class="skill-item-desc">该：${sk.do}</div>` +
-      (sk.dont ? `<div class="skill-item-desc">避免：${sk.dont}</div>` : "");
-    item.appendChild(body);
     item.onclick = () => {
       if (!current) {
-        alert("请先在左侧「开始聊天」开启会话，再选技术卡。");
+        alert("请先在左侧「开始聊天」开启会话，再点技术卡启用。");
         return;
       }
       const cur = current.skill_ids ? [...current.skill_ids] : [];
@@ -328,18 +346,13 @@ function renderSkillSidebar() {
       if (i >= 0) cur.splice(i, 1);
       else cur.push(sk.id);
       persistSkills(cur);
+      renderSkillSidebar();
     };
     list.appendChild(item);
   }
-  const pager = $("skillPager");
-  if (pages > 1) {
-    pager.classList.remove("hidden");
-    $("skillPrevPage").disabled = skillPage <= 1;
-    $("skillNextPage").disabled = skillPage >= pages;
-    $("skillPageInfo").textContent = `${skillPage} / ${pages}`;
-  } else {
-    pager.classList.add("hidden");
-  }
+  $("skillPrevPage").disabled = skillPage <= 1;
+  $("skillNextPage").disabled = skillPage >= pages;
+  $("skillPageInfo").textContent = `${skillPage} / ${pages}`;
 }
 
 async function endSession() {
@@ -402,6 +415,13 @@ function changePage(delta) {
   loadSessions().catch(() => {});
 }
 
+function switchTab(active) {
+  $("tabActive").classList.toggle("on", active);
+  $("tabHistory").classList.toggle("on", !active);
+  $("activePane").classList.toggle("hidden", !active);
+  $("historyPane").classList.toggle("hidden", active);
+}
+
 async function init() {
   personas = await api("/personas");
   $("personaSel").innerHTML = personas.map((p) => `<option value="${p.id}">${p.name}（${p.occupation}/${p.relation}）</option>`).join("");
@@ -428,11 +448,11 @@ async function init() {
       $("sendBtn").click();
     }
   });
-  $("nudgeOn").onchange = () => {
-    $("nudgeLabel").textContent = $("nudgeOn").checked ? "静默时机器人会主动搭话" : "静默搭话：关";
-  };
-  $("nudgeMin").onchange = () => $("nudgeOn").onchange();
-  $("nudgeLabel").textContent = "静默时机器人会主动搭话";
+  $("nudgeOn").onchange = () => {};
+  $("nudgeMin").onchange = () => {};
+
+  $("tabActive").onclick = () => switchTab(true);
+  $("tabHistory").onclick = () => switchTab(false);
 
   $("soulBtn").onclick = () => soulQuestion().catch((e) => alert(e.message));
   $("coachBtn").onclick = () => coachPause().catch((e) => alert(e.message));

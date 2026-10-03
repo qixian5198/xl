@@ -8,70 +8,58 @@
 </head>
 <body>
 <div class="layout">
-  <aside class="sidebar">
-    <div class="sidebar-top">
-      <h1>情商口才训练</h1>
+
+  <!-- 左栏：开始 + 会话 -->
+  <aside class="rail rail-left">
+    <div class="rail-top">
+      <h1>情商口才</h1>
       <a id="settingsLink" href="/settings.html">⚙ 设置</a>
     </div>
 
-    <section>
-      <h2>开始聊天</h2>
+    <section class="start-box">
       <label>身份</label>
       <select id="personaSel"></select>
       <div class="row" style="align-items:flex-end;gap:8px">
-        <input id="sceneInput" placeholder="可选：场景，如「朋友介绍来问睡眠问题」" style="flex:1">
-        <button id="sceneRandomBtn" class="ghost" style="width:88px;margin-top:0">随机</button>
+        <input id="sceneInput" placeholder="可选：场景，如「朋友来问睡眠问题」" style="flex:1">
+        <button id="sceneRandomBtn" class="ghost" style="width:56px;margin-top:0">随机</button>
       </div>
       <button id="startBtn">开始会话</button>
     </section>
 
-    <section class="history">
-      <div class="section-head">
-        <h2>进行中会话</h2>
-        <span id="activeCount" class="hist-count"></span>
-      </div>
-      <div id="activeList" class="session-list session-list-active"></div>
-    </section>
+    <div class="tab-bar">
+      <button id="tabActive" class="tab on">进行中</button>
+      <button id="tabHistory" class="tab">历史</button>
+    </div>
 
-    <section class="history">
-      <div class="section-head">
-        <h2>技术卡</h2>
-        <span id="skillCount" class="hist-count"></span>
-      </div>
-      <div id="skillSidebarList" class="skill-sidebar-list"></div>
-      <div class="pager" id="skillPager">
-        <button id="skillPrevPage" class="ghost" style="width:auto;margin-top:0">‹</button>
-        <span id="skillPageInfo" class="hint"></span>
-        <button id="skillNextPage" class="ghost" style="width:auto;margin-top:0">›</button>
-      </div>
-    </section>
+    <div id="activePane" class="pane">
+      <span id="activeCount" class="list-count"></span>
+      <div id="activeList" class="session-list"></div>
+    </div>
 
-    <section class="history">
-      <div class="section-head">
-        <h2>历史会话</h2>
-        <span id="histCount" class="hist-count"></span>
-      </div>
+    <div id="historyPane" class="pane hidden">
+      <span id="histCount" class="list-count"></span>
       <div id="sessionList" class="session-list"></div>
       <div class="pager" id="pager">
-        <button id="prevPage" class="ghost" style="width:auto;margin-top:0">‹</button>
-        <span id="pageInfo" class="hint"></span>
-        <button id="nextPage" class="ghost" style="width:auto;margin-top:0">›</button>
+        <button id="prevPage" class="pager-btn">‹</button>
+        <span id="pageInfo" class="pager-info">1 / 1</span>
+        <button id="nextPage" class="pager-btn">›</button>
       </div>
-    </section>
+    </div>
   </aside>
 
+  <!-- 中栏：聊天 -->
   <main class="chat">
     <header>
       <span id="chatTitle">选择身份，开始会话</span>
-      <div class="row" style="gap:10px;align-items:center">
-        <button id="endSessionBtn" class="ghost" disabled>结束会话</button>
-        <button id="coachBtn" class="ghost" disabled>暂停点评</button>
+      <div class="row" style="gap:8px;align-items:center">
+        <button id="endSessionBtn" class="ghost" disabled>结束</button>
+        <button id="coachBtn" class="ghost" disabled>点评</button>
         <button id="soulBtn" class="ghost" disabled>灵魂提问</button>
         <label class="nudge-toggle" title="你超过 N 分钟没说话时，机器人会主动搭话">
           <input type="checkbox" id="nudgeOn" checked>
-          <span id="nudgeLabel">静默搭话</span>
+          <span>静默搭话</span>
         </label>
-        <select id="nudgeMin" style="width:84px;margin:0">
+        <select id="nudgeMin" style="width:72px;margin:0">
           <option value="1">1 分</option>
           <option value="3">3 分</option>
           <option value="5" selected>5 分</option>
@@ -80,12 +68,26 @@
       </div>
     </header>
     <div id="msgs"></div>
-
     <div id="inputArea">
       <textarea id="input" rows="2" placeholder="说点什么…"></textarea>
       <button id="sendBtn">发送</button>
     </div>
   </main>
+
+  <!-- 右栏：技术卡 -->
+  <aside class="rail rail-right">
+    <div class="rail-top">
+      <h2>技术卡</h2>
+      <span id="skillCount" class="list-count"></span>
+    </div>
+    <div class="rail-tip">点卡片切换本会话启用的技术；没会话时点了不生效</div>
+    <div id="skillSidebarList" class="skill-list"></div>
+    <div class="pager" id="skillPager">
+      <button id="skillPrevPage" class="pager-btn">‹</button>
+      <span id="skillPageInfo" class="pager-info">1 / 1</span>
+      <button id="skillNextPage" class="pager-btn">›</button>
+    </div>
+  </aside>
 </div>
 
 <script src="chat.js"></script>
