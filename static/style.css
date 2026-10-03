@@ -7,16 +7,16 @@ body {
 }
 .layout {
   display: grid;
-  grid-template-columns: 260px 1fr 300px;
+  grid-template-columns: 260px 1fr;
   height: 100vh;
 }
-.sidebar, .review {
+.sidebar {
   background: #fff;
   padding: 16px;
   overflow-y: auto;
 }
 .sidebar h1 { font-size: 18px; margin: 0 0 12px; }
-.sidebar h2, .review h2 { font-size: 14px; color: #666; margin: 16px 0 8px; }
+.sidebar h2 { font-size: 14px; color: #666; margin: 16px 0 8px; }
 label { display: block; font-size: 12px; color: #888; margin: 8px 0 4px; }
 select, input, textarea, button {
   width: 100%;
@@ -118,17 +118,6 @@ button.ghost {
 }
 .msg.feedback b { color: #d46b08; }
 
-#guessPanel {
-  background: #eef2ff;
-  margin: 0 16px 8px;
-  padding: 12px;
-  border-radius: 8px;
-}
-#guessPanel h3 { font-size: 14px; margin: 0 0 8px; }
-#guessFields { display: flex; flex-wrap: wrap; gap: 8px; }
-#guessFields select { width: 130px; }
-#guessSubmitBtn { width: auto; padding: 6px 14px; }
-
 #inputArea {
   display: flex;
   gap: 8px;
@@ -139,36 +128,6 @@ button.ghost {
 #input { flex: 1; resize: none; }
 #sendBtn { width: auto; padding: 8px 18px; margin-top: 0; }
 
-.review pre {
-  white-space: pre-wrap;
-  font-size: 13px;
-  background: #fafafa;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid #eee;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-.review h3 { font-size: 13px; color: #3355ff; margin: 12px 0 6px; }
-.review ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.7; }
-.review .score-line {
-  font-size: 13px;
-  background: #f0f5ff;
-  border: 1px solid #adc6ff;
-  color: #1d39c4;
-  padding: 8px 10px;
-  border-radius: 8px;
-  margin-bottom: 8px;
-}
-.review .fw-box {
-  font-size: 13px;
-  background: #fffbe6;
-  border: 1px solid #ffe58f;
-  color: #874d00;
-  padding: 8px 10px;
-  border-radius: 8px;
-  line-height: 1.6;
-}
 .sidebar-top {
   display: flex;
   justify-content: space-between;
@@ -328,18 +287,6 @@ button.ghost {
 }
 .pager button:disabled { background: #f0f0f0; color: #bbb; }
 .pager .hint { font-size: 12px; }
-
-.review-cta {
-  margin-top: 10px;
-  background: #3355ff;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 9px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.review-cta:disabled { background: #c3ccf5; cursor: default; }
 
 .model-mini .hint { margin: 4px 0 0; }
 .hint { font-size: 12px; color: #888; line-height: 1.6; }

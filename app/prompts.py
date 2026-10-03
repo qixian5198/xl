@@ -10,13 +10,6 @@ JSON_FORMAT_RULE = (
 
 DEFAULT_STATE = {"emotion": "平静", "patience": "中", "affection": "中", "distance": "正常"}
 
-MODE_NAMES = {
-    "mood": "模式一：判断机器人心情",
-    "personality": "模式二：判断机器人性格",
-    "chat": "模式三：聊天问答训练",
-    "soul": "模式四：灵魂提问",
-}
-
 
 def _profile_block(p: Persona) -> str:
     if not getattr(p, "profile_json", None):
@@ -166,26 +159,18 @@ def skills_block(skills: list) -> str:
     return "\n".join(lines)
 
 
-def main_system(persona: Persona, user: Optional[User], mode: str, state: dict,
+def main_system(persona: Persona, user: Optional[User], state: dict,
                scene: Optional[str] = None, memory_facts: Optional[str] = None,
                persona_memory: Optional[str] = None,
                skills: Optional[list] = None) -> str:
     """一次调用三件套：回复 + 隐藏状态更新 + 给用户打分。
 
-    升级点（参考 聊天机器人升级方式.md）：
-    - 三层结构：角色(persona) + 场景(scene) + 目标(模式)
+    - 三层结构：角色(persona) + 场景(scene)
     - 情绪表达规则：按当前情绪调整说话方式
     - 记忆：把用户之前说过的关键事主动接回来
     - 主动行为：偶尔追问 / 调侃 / 关心，不总是被动回应
     """
-    mode_desc = {
-        "mood": "用户在通过对话判断你的心情。你的回复要让状态变化可以被推断（比如烦躁时话会变短、变得不耐烦），但绝不直接说出自己的状态数值。",
-        "personality": "用户要判断你的性格。保持隐藏性格一致，通过言行让用户慢慢看清，但不解释。",
-        "chat": "你主动提问、回应，训练用户的情商和应对能力。可以追问细节，观察用户怎么应对。",
-        "soul": "偶尔抛出更尖锐的、直击要害的问题，帮助用户看清自己话里的漏洞。",
-    }[mode]
-
-    parts = [persona_block(persona), mode_desc, state_block(state)]
+    parts = [persona_block(persona), state_block(state)]
 
     if scene:
         parts.append(f"本次场景：{scene}。（围绕这个场景聊，不要跑题到别的场景。）")
@@ -223,7 +208,7 @@ def main_system(persona: Persona, user: Optional[User], mode: str, state: dict,
         "assistant_reply: 你作为该角色对用户的下一句回复（1-3 句，口语化）。\n"
         "hidden_state: 用户说完这句话之后你的新状态，含 emotion（只能取：开心/烦躁/焦虑/失望/生气/平静）、"
         "patience（只能取：高/中/低）、affection（只能取：高/中/低）、distance（只能取：疏远/正常/亲近）四个字段，"
-        "必须是这些枚举值之一，不要输出数字或自由文本；若模式二还要加 personality（可省略保持原值），"
+        "必须是这些枚举值之一，不要输出数字或自由文本；"
         "再加 reasoning 说明状态为什么变（50 字内）。\n"
         "user_facts: 用户在这一句里新透露的、关于用户本人的事（ta 自己的健康/项目/情绪/生活变动），"
         "字符串数组，每项 10-30 字（例：「老板让ta周末加班赶项目」），没有就返回 []。\n"
@@ -238,40 +223,12 @@ def main_system(persona: Persona, user: Optional[User], mode: str, state: dict,
     return "\n\n".join(parts)
 
 
-GUESS_SYSTEM = (
-    "你是复盘分析器。用户试图推断你在某时刻的隐藏状态，你给出实际状态并分析用户哪句话导致了变化。"
-    "输出 JSON 字段：correct(答对维度数, 整数)、total(维度总数, 整数)、analysis(80 字内，指出关键的那句话"
-    "以及为什么让状态变化，用可执行的训练建议收尾)。"
-)
-
-
 SOUL_QUESTION_SYSTEM = (
     "你是「灵魂提问」生成器。根据用户资料、最近对话和常见沟通弱点，生成 3-5 个尖锐但有建设性的问题，"
     "帮用户看清自己话里的假设、借口或没接住的情绪。问题要具体到用户刚说的场景，不要泛泛而谈。"
     "如果提供了沟通技术卡，优先从它们的角度出题，并可在 questions 里自然带上出处。"
     "输出 JSON 字段：questions 是字符串数组，每项一个完整问句；sources 是字符串数组，标注每个问题主要来源"
     "（如「用户资料-工作」「刚才对话」「某本书·某技术」），两个数组长度一致。"
-)
-
-
-SUMMARY_SYSTEM = (
-    "你是复盘总结器。根据整段对话、各轮反馈、判断结果和沟通技术卡，生成一份训练复盘。"
-    "不要只说「做得不错」，要指出哪句话让关系变好、哪句话暴露了问题或越界，"
-    "并给出下次可以直接照说的改法。如果提供了沟通技术卡，suggestions 和 techniques 里要引用对应技术名和书名，"
-    "让复盘像教练在用书教人。"
-    "输出 JSON 字段："
-    "total(0-100 整段平均分)、stars(0-5 整数，整段对话的星级，5 优秀 / 4 良好 / 3 及格 / 2 偏弱 / 1 较差，"
-    "必须与 total 大致对应)、"
-    "dims 对象（empathy/clarity/timing/respect/boundary 各维度均分，保留 1 位小数）、"
-    "framework(一句话点评：这场对话落在哪种沟通框架/公式里（如 NVC「观察-感受-需要-请求」、"
-    "「先接情绪再给方案」、「立场-理由-方案-退路」），哪个环节缺了或断了)、"
-    "techniques(字符串数组，1-3 条，每条引用一个沟通技术/公式，说明它在这场对话里怎么用、"
-    "哪一句可以改成按公式来；能对上技术卡的注明「参考：《书名》·技术名」)、"
-    "highlights(字符串数组，2-3 条，说对的点，具体到哪句话)、"
-    "problems(字符串数组，2-3 条，卡住或不合适的点，具体到哪句话以及为什么)、"
-    "suggestions(字符串数组，2-3 条，对应 problems 的改法，可直接照说，"
-    "能对上技术卡的注明「参考：《书名》·技术名」)、"
-    "next_scenario(一句话，下次最该练的场景，尽量变式同类，用于迁移练习)。"
 )
 
 

@@ -158,7 +158,6 @@ class UserIn(BaseModel):
 
 class SessionIn(BaseModel):
     persona_id: int
-    mode: str  # mood / personality / chat / soul
     user_id: Optional[int] = None
     scene: Optional[str] = None  # 本次对话场景，如「朋友介绍来问睡眠问题」
 
@@ -169,11 +168,6 @@ class MessageIn(BaseModel):
 
 class SessionSkillsIn(BaseModel):
     skill_ids: List[int] = []  # 空数组 = 恢复自动路由
-
-
-class GuessIn(BaseModel):
-    state_id: int
-    guess: dict
 
 
 @router.get("/personas")
@@ -464,7 +458,7 @@ def delete_skill(skid: int):
 @router.post("/sessions")
 def create_session(body: SessionIn):
     try:
-        return service.create_session(body.user_id, body.persona_id, body.mode, scene=body.scene)
+        return service.create_session(body.user_id, body.persona_id, scene=body.scene)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -490,7 +484,6 @@ def list_sessions(page: int = 1, per_page: int = 10, status: Optional[str] = Non
                 {
                     "id": r.id,
                     "persona_id": r.persona_id,
-                    "mode": r.mode,
                     "status": r.status,
                     "scene": r.scene,
                     "created_at": str(r.created_at),
@@ -517,7 +510,6 @@ def get_session(sid: int):
         return {
             "id": r.id,
             "persona_id": r.persona_id,
-            "mode": r.mode,
             "status": r.status,
             "skill_ids": skill_ids,
             "messages": [{"id": m.id, "role": m.role, "content": m.content} for m in msgs],
@@ -556,16 +548,6 @@ def set_session_skills(sid: int, body: SessionSkillsIn):
 def post_message(sid: int, body: MessageIn):
     try:
         return service.send_message(sid, body.content)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    except LLMError as e:
-        raise HTTPException(502, str(e))
-
-
-@router.post("/sessions/{sid}/guess")
-def post_guess(sid: int, body: GuessIn):
-    try:
-        return service.submit_guess(sid, body.state_id, body.guess)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except LLMError as e:
@@ -638,13 +620,3 @@ def post_end_session(sid: int):
         return service.end_session(sid)
     except ValueError as e:
         raise HTTPException(400, str(e))
-
-
-@router.post("/sessions/{sid}/summary")
-def post_summary(sid: int):
-    try:
-        return service.get_summary(sid)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    except LLMError as e:
-        raise HTTPException(502, str(e))

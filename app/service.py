@@ -257,7 +257,7 @@ def _coach_skill_block(skills: list) -> str:
     return "\n".join(lines)
 
 
-def create_session(user_id: Optional[int], persona_id: int, mode: str,
+def create_session(user_id: Optional[int], persona_id: int,
                   scene: Optional[str] = None) -> dict:
     s = db()
     try:
@@ -274,13 +274,13 @@ def create_session(user_id: Optional[int], persona_id: int, mode: str,
                 f"{p.name} 已有一个进行中的会话（#{active.id}），请先结束它，再开新的"
             )
         user = _get_user(user_id)
-        sess = Session(user_id=user.id, persona_id=persona_id, mode=mode,
+        sess = Session(user_id=user.id, persona_id=persona_id,
                        scene=scene or None,
                        initial_state_json=json.dumps(prompts.DEFAULT_STATE, ensure_ascii=False))
         s.add(sess)
         s.commit()
         s.refresh(sess)
-        return {"id": sess.id, "mode": mode, "persona_id": persona_id,
+        return {"id": sess.id, "persona_id": persona_id,
                 "scene": sess.scene, "status": "active", "skill_ids": []}
     finally:
         s.close()
@@ -302,18 +302,18 @@ def send_message(session_id: int, content: str) -> dict:
         s.commit()
         s.refresh(user_msg)
 
-        # 判断这轮是否该给反馈：chat/soul 每轮都评；mood/personality 每 N 轮评一次
+        # 判断这轮是否该给反馈：每 N 轮评一次
         turn = s.query(Message).filter(
             Message.session_id == session_id,
             Message.role == "user",
             Message.id <= user_msg.id,
         ).count()
-        give_feedback = sess.mode in ("chat", "soul") or (turn % max(settings.FEEDBACK_EVERY_N, 1) == 0)
+        give_feedback = turn % max(settings.FEEDBACK_EVERY_N, 1) == 0
 
         facts_text = _recent_facts(user.id) if user else ""
         skills = _skills_for_session(session_id, sess.scene)
         sys_prompt = prompts.main_system(
-            p, user, sess.mode, _latest_state(session_id),
+            p, user, _latest_state(session_id),
             scene=sess.scene,
             memory_facts=facts_text or None,
             persona_memory=_persona_facts(p.id),
@@ -397,7 +397,6 @@ def send_message(session_id: int, content: str) -> dict:
             "message_id": assistant_msg.id,
             "state_id": state.id,
             "assistant_message": reply,
-            "ask_user_to_guess": sess.mode in ("mood", "personality"),
             "feedback": None,
         }
         if feedback_row:
@@ -411,56 +410,6 @@ def send_message(session_id: int, content: str) -> dict:
                 "comment": feedback_row.comment,
             }
         return resp
-    finally:
-        s.close()
-
-
-def submit_guess(session_id: int, state_id: int, guess: dict) -> dict:
-    s = db()
-    try:
-        sess = s.get(Session, session_id)
-        state = s.get(HiddenState, state_id)
-        if sess is None or state is None or state.session_id != session_id:
-            raise ValueError("会话或状态不存在")
-
-        dimensions = ["emotion", "patience", "affection", "distance"]
-        if sess.mode == "personality" and state.personality:
-            dimensions.append("personality")
-
-        actual = {d: getattr(state, d) for d in dimensions}
-        correct = sum(1 for d in dimensions if str(guess.get(d, "")).strip() == str(actual[d] or "").strip())
-
-        p = s.get(Persona, sess.persona_id)
-        user = s.get(User, sess.user_id)
-        ctx = _history_msgs(session_id, limit=12)
-        last_user = ctx[-1]["content"] if ctx else ""
-        reasoning = state.reasoning or "无明显变化。"
-
-        sys_prompt = prompts.GUESS_SYSTEM + (
-            f"\n\n实际状态：{json.dumps(actual, ensure_ascii=False)}\n"
-            f"用户当时的最后一句话：{last_user}\n"
-            f"当时状态变化原因：{reasoning}"
-        )
-        result = ask_json(sys_prompt, ctx, temperature=0.3)
-
-        g = Guess(
-            session_id=session_id,
-            state_id=state_id,
-            guess_json=json.dumps(guess, ensure_ascii=False),
-            correct=int(result.get("correct", correct)),
-            total=len(dimensions),
-            analysis=result.get("analysis", ""),
-        )
-        s.add(g)
-        state.revealed = 1
-        s.commit()
-
-        return {
-            "actual": actual,
-            "correct": g.correct,
-            "total": g.total,
-            "analysis": g.analysis,
-        }
     finally:
         s.close()
 
@@ -623,53 +572,6 @@ def delete_session(session_id: int) -> dict:
         s.delete(sess)
         s.commit()
         return {"deleted": session_id}
-    finally:
-        s.close()
-
-
-def get_summary(session_id: int) -> dict:
-    s = db()
-    try:
-        sess = s.get(Session, session_id)
-        if sess is None:
-            raise ValueError("会话不存在")
-        p = s.get(Persona, sess.persona_id)
-        user = s.get(User, sess.user_id)
-
-        msgs = _history_msgs(session_id, limit=100)
-        fbs = (
-            s.query(Feedback).filter(Feedback.session_id == session_id).order_by(Feedback.id).all()
-        )
-        gs = s.query(Guess).filter(Guess.session_id == session_id).order_by(Guess.id).all()
-
-        fb_digest = [
-            f"第 {f.id} 轮：total={f.total}，comment={f.comment}" for f in fbs
-        ]
-        guess_digest = [
-            f"判断正确率 {g.correct}/{g.total}：{g.analysis}" for g in gs
-        ]
-
-        sys_prompt = (
-            prompts.SUMMARY_SYSTEM
-            + f"\n\n各轮反馈：\n" + ("\n".join(fb_digest) if fb_digest else "（无逐轮反馈）")
-            + "\n\n判断结果：\n"
-            + ("\n".join(guess_digest) if guess_digest else "（本会话无判断）")
-            + "\n\n" + _coach_skill_block(_all_skills()[:6])
-        )
-        result = ask_json(sys_prompt, msgs, temperature=0.4)
-
-        return {
-            "session_id": session_id,
-            "total": result.get("total"),
-            "stars": result.get("stars"),
-            "dims": result.get("dims", {}),
-            "framework": result.get("framework", ""),
-            "techniques": result.get("techniques", []),
-            "highlights": result.get("highlights", []),
-            "problems": result.get("problems", []),
-            "suggestions": result.get("suggestions", []),
-            "next_scenario": result.get("next_scenario", ""),
-        }
     finally:
         s.close()
 
